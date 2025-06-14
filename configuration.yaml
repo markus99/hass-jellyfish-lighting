@@ -11,4 +11,4 @@ debugpy:
   start: true
   wait: false
 
-scene: !include scenes.yaml
+#scene: !include scenes.yaml

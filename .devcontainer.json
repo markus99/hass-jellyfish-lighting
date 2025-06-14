@@ -1,9 +1,19 @@
 {
-	"name": "HASS JellyFish Lighting Dev Container",
-	"image": "mcr.microsoft.com/devcontainers/python:3.12-bullseye",
-	"postCreateCommand": "/bin/bash scripts/setup",
-	"forwardPorts": [
-		8123
+	"name": "HASS Jellyfish Lighting Dev Container",
+	//"context": "..",
+	"dockerFile": "Dockerfile.dev",
+	"postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && scripts/setup",
+	//"postStartCommand": "scripts/bootstrap",
+	"containerEnv": {
+		"PYTHONASYNCIODEBUG": "1"
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/github-cli:1": {}
+	},
+	// Port 5683 udp is used by Shelly integration
+	"appPort": [
+		"8123:8123",
+		"5683:5683/udp"
 	],
 	"customizations": {
 		"vscode": {
@@ -29,8 +39,5 @@
 			}
 		}
 	},
-	"remoteUser": "vscode",
-	"features": {
-		"rust": "latest"
-	}
+	"remoteUser": "vscode"
 }
