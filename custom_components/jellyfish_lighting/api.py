@@ -84,7 +84,51 @@ class JellyfishLightingApiClient:
 
     def _attempt_reconnect(self, *args) -> None:
         """Attempts to reconnect to the controller"""
-        asyncio.run_coroutine_threadsafe(self.async_connect(), self._hass.loop)
+        LOGGER.warning(
+            "JellyFish controller connection error, scheduling reconnect to %s",
+            self.address,
+        )
+        asyncio.run_coroutine_threadsafe(self._async_reconnect(), self._hass.loop)
+
+    async def _async_reconnect(self):
+        """Force-close stale connection and reconnect.
+
+        The JellyFish controller only accepts one WebSocket connection at a
+        time. If the previous connection's TCP socket is still ESTABLISHED at
+        the kernel level (stale), new connection attempts will time out
+        indefinitely. We must tear down the old connection first.
+        """
+        LOGGER.debug(
+            "Force-closing stale connection to JellyFish controller at %s",
+            self.address,
+        )
+        await self._hass.async_add_executor_job(self._force_close_connection)
+        # Give the controller time to release the old session
+        await asyncio.sleep(2)
+        try:
+            await self.async_connect()
+        except HomeAssistantError:
+            LOGGER.warning(
+                "Reconnect to JellyFish controller at %s failed, will retry on next poll",
+                self.address,
+            )
+
+    def _force_close_connection(self):
+        """Force-close the underlying WebSocket and TCP connection."""
+        try:
+            self._controller.disconnect(timeout=3)
+        except Exception:  # noqa: BLE001
+            pass
+        # Also close the raw socket directly in case disconnect() didn't
+        # fully tear down the TCP connection
+        try:
+            ws = self._controller._JellyFishController__ws
+            if hasattr(ws, "close"):
+                ws.close()
+            if hasattr(ws, "sock") and ws.sock:
+                ws.sock.close()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _recieve_push(self, data):
         """Updates state data when a push event is received from the controller"""
@@ -124,6 +168,11 @@ class JellyfishLightingApiClient:
             return
         try:
             async with self._connecting:
+                # Force-close any stale connection before reconnecting.
+                # The JellyFish controller only accepts one WebSocket at a
+                # time, so a leftover TCP connection will block new ones.
+                await self._hass.async_add_executor_job(self._force_close_connection)
+                await asyncio.sleep(1)
                 LOGGER.debug(
                     "Connecting to the JellyFish Lighting controller at %s",
                     self.address,
