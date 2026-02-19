@@ -115,18 +115,19 @@ class JellyfishLightingApiClient:
 
     def _force_close_connection(self):
         """Force-close the underlying WebSocket and TCP connection."""
-        try:
-            self._controller.disconnect(timeout=3)
-        except Exception:  # noqa: BLE001
-            pass
-        # Also close the raw socket directly in case disconnect() didn't
-        # fully tear down the TCP connection
+        # Grab the WebSocket object before disconnect() can set it to None.
+        # WebSocket.close() has an early-exit guard (if not self.connected: return)
+        # that skips socket teardown when the connection has already errored.
+        # WebSocket.shutdown() has no such guard and directly closes the raw
+        # TCP socket, which is what we need to release the controller's session.
         try:
             ws = self._controller._JellyFishController__ws
-            if hasattr(ws, "close"):
-                ws.close()
-            if hasattr(ws, "sock") and ws.sock:
-                ws.sock.close()
+            if hasattr(ws, "sock") and ws.sock and hasattr(ws.sock, "shutdown"):
+                ws.sock.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self._controller.disconnect(timeout=3)
         except Exception:  # noqa: BLE001
             pass
 
