@@ -241,9 +241,14 @@ class JellyfishLightingApiClient:
         try:
             zones = [zone] if zone else self.zones
             LOGGER.debug("Getting data for zone(s) %s", zones or "[all zones]")
-            await self._hass.async_add_executor_job(
+            zone_states = await self._hass.async_add_executor_job(
                 self._controller.get_zone_states, zones
             )
+            for zone_name, state in zone_states.items():
+                if not state:
+                    continue
+                self.states[zone_name] = JellyFishLightingZoneData.from_zone_state(state)
+
         except JellyFishException as ex:
             raise HomeAssistantError(
                 f"Failed to get zone data for [{', '.join(zones)}] from JellyFish Lighting controller at {self.address}"
@@ -254,7 +259,7 @@ class JellyfishLightingApiClient:
         await self.async_connect()
         try:
             LOGGER.debug("Turning on zone %s", zone)
-            await self._hass.async_add_executor_job(self._controller.turn_on, [zone])
+            await self._hass.async_add_executor_job(self._controller.turn_on, [zone], False)
         except JellyFishException as ex:
             raise HomeAssistantError(
                 f"Failed to turn on JellyFish Lighting zone '{zone}'"
@@ -265,7 +270,7 @@ class JellyfishLightingApiClient:
         await self.async_connect()
         try:
             LOGGER.debug("Turning off zone %s", zone)
-            await self._hass.async_add_executor_job(self._controller.turn_off, [zone])
+            await self._hass.async_add_executor_job(self._controller.turn_off, [zone], False)
         except JellyFishException as ex:
             raise HomeAssistantError(
                 f"Failed to turn off JellyFish Lighting zone '{zone}'"
@@ -277,7 +282,7 @@ class JellyfishLightingApiClient:
         try:
             LOGGER.debug("Applying pattern '%s' to zone %s", pattern, zone)
             await self._hass.async_add_executor_job(
-                self._controller.apply_pattern, pattern, [zone]
+                self._controller.apply_pattern, pattern, [zone], False
             )
         except JellyFishException as ex:
             raise HomeAssistantError(
@@ -298,7 +303,7 @@ class JellyfishLightingApiClient:
                 zone,
             )
             await self._hass.async_add_executor_job(
-                self._controller.apply_color, rgb, brightness, [zone]
+                self._controller.apply_color, rgb, brightness, [zone], False
             )
         except JellyFishException as ex:
             raise HomeAssistantError(
@@ -324,7 +329,9 @@ class JellyFishLightingZoneData:
     @classmethod
     def from_zone_state(cls, state: ZoneState):
         """Instantiates the class from the data returned by the API"""
-        data = cls(state.is_on, state.file or None)
+        is_on = getattr(state, "is_on", bool(state.state))
+        data = cls(is_on, state.file or None)
+
         if state.data:
             data.brightness = state.data.runData.brightness
             if state.data.type == "Color" and len(state.data.colors) == 3:
